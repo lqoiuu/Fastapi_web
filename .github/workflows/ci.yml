@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: ticketing_test
+          POSTGRES_USER: ticketing
+          POSTGRES_PASSWORD: ticketing
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ticketing -d ticketing_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      TICKETING_ENVIRONMENT: test
+      TICKETING_AUTH_SECRET_KEY: ci-test-secret-key-at-least-32-characters
+      TICKETING_DATABASE_URL: postgresql+asyncpg://ticketing:ticketing@127.0.0.1:5432/ticketing_test
+      TICKETING_TEST_DATABASE_URL: postgresql+asyncpg://ticketing:ticketing@127.0.0.1:5432/ticketing_test
+      TICKETING_REDIS_URL: redis://127.0.0.1:6379/15
+      TICKETING_TEST_REDIS_URL: redis://127.0.0.1:6379/15
+      TICKETING_CELERY_BROKER_URL: redis://127.0.0.1:6379/14
+      TICKETING_TEST_CELERY_BROKER_URL: redis://127.0.0.1:6379/14
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.12.7"
+          enable-cache: true
+
+      - name: Install Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install locked dependencies
+        run: uv sync --locked --all-groups
+
+      - name: Apply database migrations
+        run: uv run alembic upgrade head
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Type check
+        run: uv run mypy src tests
+
+      - name: Test
+        run: uv run pytest -o "addopts=-ra -q"
+
+      - name: Check migration drift
+        run: uv run alembic check
+
+      - name: Build production image
+        run: docker build --tag fastapi-ticketing-system:ci .

@@ -1,0 +1,40 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+.venv_old/
+
+# Local configuration and secrets
+/.env
+/.env.*
+!/.env.example
+!/.env.test.example
+!/.env.production.example
+*.pem
+*.key
+*.p12
+*.pfx
+var/
+.pytest_attachment_storage/
+.pytest_export_storage/
+celerybeat-schedule*
+
+# IDE and operating-system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Test and coverage artifacts
+.coverage
+htmlcov/

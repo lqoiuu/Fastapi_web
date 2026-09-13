@@ -1,0 +1,48 @@
+x-production-app-environment: &production-app-environment
+  TICKETING_ENVIRONMENT: production
+  TICKETING_LOG_LEVEL: ${TICKETING_LOG_LEVEL:-INFO}
+  TICKETING_AUTH_SECRET_KEY: ${TICKETING_AUTH_SECRET_KEY:?Set TICKETING_AUTH_SECRET_KEY in the production env file}
+  TICKETING_DATABASE_URL: ${TICKETING_DATABASE_URL:?Set TICKETING_DATABASE_URL in the production env file}
+  TICKETING_REDIS_URL: ${TICKETING_REDIS_URL:-redis://redis:6379/0}
+  TICKETING_CELERY_BROKER_URL: ${TICKETING_CELERY_BROKER_URL:-redis://redis:6379/1}
+
+services:
+  postgres:
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in the production env file}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in the production env file}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the production env file}
+    ports: !reset []
+    restart: always
+
+  redis:
+    ports: !reset []
+    restart: always
+
+  migrate:
+    environment: *production-app-environment
+
+  api:
+    environment: *production-app-environment
+    command:
+      - uvicorn
+      - ticketing.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --workers
+      - ${TICKETING_WEB_WORKERS:-4}
+      - --proxy-headers
+      - --forwarded-allow-ips
+      - ${TICKETING_FORWARDED_ALLOW_IPS:-127.0.0.1}
+      - --no-access-log
+    restart: always
+
+  worker:
+    environment: *production-app-environment
+    restart: always
+
+  beat:
+    environment: *production-app-environment
+    restart: always

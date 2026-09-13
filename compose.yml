@@ -1,0 +1,151 @@
+x-app-environment: &app-environment
+  TICKETING_ENVIRONMENT: ${TICKETING_ENVIRONMENT:-local}
+  TICKETING_LOG_LEVEL: ${TICKETING_LOG_LEVEL:-INFO}
+  TICKETING_AUTH_SECRET_KEY: ${TICKETING_AUTH_SECRET_KEY:-development-only-change-me-32-chars}
+  TICKETING_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-ticketing}:${POSTGRES_PASSWORD:-ticketing}@postgres:5432/${POSTGRES_DB:-ticketing}
+  TICKETING_REDIS_URL: redis://redis:6379/0
+  TICKETING_CELERY_BROKER_URL: redis://redis:6379/1
+  TICKETING_ATTACHMENT_STORAGE_PATH: /app/var/attachments
+  TICKETING_EXPORT_STORAGE_PATH: /app/var/exports
+
+x-app-service: &app-service
+  image: fastapi-ticketing-system:${TICKETING_IMAGE_TAG:-local}
+  build:
+    context: .
+    dockerfile: Dockerfile
+  environment: *app-environment
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ticketing}
+      POSTGRES_USER: ${POSTGRES_USER:-ticketing}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ticketing}
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - redis_data:/data
+
+  migrate:
+    <<: *app-service
+    command: ["alembic", "upgrade", "head"]
+    healthcheck:
+      disable: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    <<: *app-service
+    command:
+      [
+        "uvicorn",
+        "ticketing.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--workers",
+        "${TICKETING_WEB_WORKERS:-2}",
+        "--no-access-log",
+      ]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${TICKETING_HTTP_PORT:-8080}:8000"
+    volumes:
+      - attachment_data:/app/var/attachments
+      - export_data:/app/var/exports
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=2)",
+        ]
+      interval: 10s
+      timeout: 3s
+      start_period: 15s
+      retries: 5
+    restart: unless-stopped
+
+  worker:
+    <<: *app-service
+    command:
+      [
+        "celery",
+        "-A",
+        "ticketing.tasks.celery_app:celery_app",
+        "worker",
+        "--loglevel=INFO",
+        "--concurrency=${TICKETING_CELERY_CONCURRENCY:-2}",
+      ]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - export_data:/app/var/exports
+    healthcheck:
+      disable: true
+    restart: unless-stopped
+
+  beat:
+    <<: *app-service
+    command:
+      [
+        "celery",
+        "-A",
+        "ticketing.tasks.celery_app:celery_app",
+        "beat",
+        "--loglevel=INFO",
+        "--schedule=/tmp/celerybeat-schedule",
+      ]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  attachment_data:
+  export_data:

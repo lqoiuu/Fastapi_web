@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=80"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fastapi-ticketing-system"
+version = "0.1.0"
+description = "A multi-tenant ticketing and team collaboration backend."
+requires-python = ">=3.13"
+dependencies = [
+    "alembic>=1.16,<2.0",
+    "asyncpg>=0.30,<1.0",
+    "celery[redis]>=5.5,<6.0",
+    "email-validator>=2.2,<3.0",
+    "fastapi>=0.116,<1.0",
+    "pwdlib[argon2]>=0.3,<1.0",
+    "pyjwt>=2.10,<3.0",
+    "pydantic-settings>=2.10,<3.0",
+    "sqlalchemy[asyncio]>=2.0.41,<3.0",
+    "uvicorn[standard]>=0.35,<1.0",
+    "python-multipart>=0.0.20,<1.0",
+    "prometheus-client>=0.22,<1.0",
+    "redis[hiredis]>=6.4,<7.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx2>=2.0,<3.0",
+    "mypy>=1.17,<2.0",
+    "pytest>=8.4,<10.0",
+    "ruff>=0.12,<1.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-ra -q -m 'not integration'"
+markers = [
+    "integration: requires an isolated PostgreSQL database ending in _test and dedicated Redis databases",
+]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+files = ["src", "tests"]
